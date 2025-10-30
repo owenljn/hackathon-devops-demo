@@ -176,11 +176,33 @@ def create_pr_with_rest_api(
 
     return None
 
+def _git_has_changes() -> bool:
+    """Return True if working tree has changes."""
+    res = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True, text=True
+    )
+    return bool(res.stdout.strip())
+
+def _ensure_at_least_one_change(base_dir: str, patches_count: int) -> None:
+    """
+    If there are no patches and no diffs, create a small report file so that
+    a commit/PR can still be created (useful for demos).
+    """
+    if patches_count == 0 and not _git_has_changes():
+        report_path = Path(base_dir) / "security_report.md"
+        report_path.write_text(
+            "# Automated IaC Scan\n\n"
+            "- No auto-fixes were generated.\n"
+            "- This PR is opened for manual review and policy exception tracking.\n",
+            encoding="utf-8"
+        )
+
+
 async def run_pr_create(pr_input: PRCreateInput) -> PRCreateResponse:
-    """Create a PR with applied patches"""
+    """Create a PR with applied patches (robust to no-diff situations)."""
     logger.info(f"Creating PR for repo {pr_input.repo}")
 
-    # Get environment variables
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token:
         return PRCreateResponse(
@@ -200,23 +222,32 @@ async def run_pr_create(pr_input: PRCreateInput) -> PRCreateResponse:
     # Get current working directory as base for file operations
     base_dir = os.getcwd()
 
-    # Apply patches
+    # apply the patch
     if not apply_patches_to_directory(pr_input.patches, base_dir):
         return PRCreateResponse(
             success=False,
             message="Failed to apply patches to working directory"
         )
 
-    # Try GitHub CLI first
+    _ensure_at_least_one_change(base_dir, patches_count=len(pr_input.patches))
+
+    # skip PR if no change to commit
+    if not _git_has_changes():
+        logger.warning("No file changes detected after patch application. Skipping PR creation.")
+        return PRCreateResponse(
+            success=False,
+            message="No file changes to commit or push."
+        )
+
+    # use gh CLI, and failover to RESTful API
     pr_url = create_pr_with_gh_cli(
         pr_input.repo,
         pr_input.pr_spec.title,
         pr_input.pr_spec.body,
-        pr_input.pr_spec.head_branch,
-        pr_input.pr_spec.base_branch
+        pr_input.pr_spec.head_branch,  # eg. 'autofix/<sha>'
+        pr_input.pr_spec.base_branch   # 'main' branch
     )
 
-    # Fallback to REST API
     if not pr_url:
         logger.info("Trying REST API fallback")
         pr_url = create_pr_with_rest_api(
@@ -234,8 +265,8 @@ async def run_pr_create(pr_input: PRCreateInput) -> PRCreateResponse:
             message="PR created successfully",
             pr_url=pr_url
         )
-    else:
-        return PRCreateResponse(
-            success=False,
-            message="Failed to create PR - check GitHub CLI authentication and repository access"
-        )
+
+    return PRCreateResponse(
+        success=False,
+        message="Failed to create PR - check GitHub CLI authentication and repository access"
+    )
