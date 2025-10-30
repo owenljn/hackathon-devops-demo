@@ -22,5 +22,28 @@
     ],
     "status": "processing",
     "stored_at": "now"
+  },
+  "owenljn/hackathon-devops-demo#cdb6319383f2d9170ff76a0fd9965190276a864d": {
+    "type": "push",
+    "repo": "owenljn/hackathon-devops-demo",
+    "branch": "main",
+    "commit_sha": "cdb6319383f2d9170ff76a0fd9965190276a864d",
+    "changed_paths": [
+      "event_store.json"
+    ],
+    "status": "pr_failed",
+    "stored_at": "now",
+    "error": "Failed to create PR - check GitHub CLI authentication and repository access"
+  },
+  "owenljn/hackathon-devops-demo#70e1ff0631271b6ca8b87bc4f2644e32b6d0e603": {
+    "type": "push",
+    "repo": "owenljn/hackathon-devops-demo",
+    "branch": "test-demo",
+    "commit_sha": "70e1ff0631271b6ca8b87bc4f2644e32b6d0e603",
+    "changed_paths": [
+      "samples/iac/insecure/main.tf"
+    ],
+    "status": "processing",
+    "stored_at": "now"
   }
 }
