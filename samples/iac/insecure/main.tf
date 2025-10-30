@@ -15,6 +15,7 @@ resource "aws_security_group" "demo" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+
 #tmp
   # ISSUE 2: Overly permissive egress (this is actually okay for egress, but demo focuses on ingress)
   egress {
