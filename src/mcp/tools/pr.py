@@ -13,21 +13,29 @@ logger = logging.getLogger(__name__)
 
 def prepare_head_branch(head_branch: str, base_branch: str = "main") -> None:
     """
-    Ensure the working tree is on `head_branch` forked from `origin/<base_branch>`.
-    Creates or resets the branch locally so subsequent commits land on it.
+    Ensure we are on `head_branch` forked from `origin/<base_branch>`.
+    Auto-stash a dirty working tree to avoid checkout failures.
     """
-    # Fetch the latest base branch
     subprocess.run(["git", "fetch", "origin", base_branch], check=True)
-    # Create (or reset) the head branch from the remote base
+
+    # automatically stash the uncommitted works
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True, text=True, check=True
+    )
+    if status.stdout.strip():
+        subprocess.run(["git", "stash", "--include-untracked", "-m", "automcp-prep"], check=True)
+
+    # Create/reset head branch based on remote main branch
     subprocess.run(["git", "checkout", "-B", head_branch, f"origin/{base_branch}"], check=True)
 
-    # Make sure we have a usable identity (helpful on fresh machines/CI)
     try:
-        subprocess.run(["git", "config", "user.name"], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email"], check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name"], capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email"], capture_output=True, check=True)
     except subprocess.CalledProcessError:
         subprocess.run(["git", "config", "user.name", "AutoMCP Bot"], check=True)
         subprocess.run(["git", "config", "user.email", "bot@automcp.dev"], check=True)
+
 
 def apply_patches_to_directory(patches: list[PatchSpec], base_directory: str) -> bool:
     """
