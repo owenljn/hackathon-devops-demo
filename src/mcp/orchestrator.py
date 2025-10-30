@@ -133,7 +133,7 @@ This PR contains automated fixes for Infrastructure as Code security issues dete
 ### Applied Fixes:
 """ + "\n".join([f"- {p.description}" for p in patches]),
 
-            head_branch=f"main/{commit_sha[:8]}",
+            head_branch=f"autofix/{commit_sha[:8]}",
             base_branch="main",
             draft=False
         )

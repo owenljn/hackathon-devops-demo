@@ -11,6 +11,24 @@ from ..schemas import PRCreateInput, PRCreateResponse, PRSpec, PatchSpec
 
 logger = logging.getLogger(__name__)
 
+def prepare_head_branch(head_branch: str, base_branch: str = "main") -> None:
+    """
+    Ensure the working tree is on `head_branch` forked from `origin/<base_branch>`.
+    Creates or resets the branch locally so subsequent commits land on it.
+    """
+    # Fetch the latest base branch
+    subprocess.run(["git", "fetch", "origin", base_branch], check=True)
+    # Create (or reset) the head branch from the remote base
+    subprocess.run(["git", "checkout", "-B", head_branch, f"origin/{base_branch}"], check=True)
+
+    # Make sure we have a usable identity (helpful on fresh machines/CI)
+    try:
+        subprocess.run(["git", "config", "user.name"], check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email"], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        subprocess.run(["git", "config", "user.name", "AutoMCP Bot"], check=True)
+        subprocess.run(["git", "config", "user.email", "bot@automcp.dev"], check=True)
+
 def apply_patches_to_directory(patches: list[PatchSpec], base_directory: str) -> bool:
     """
     Apply patches to files in the working directory
@@ -161,6 +179,15 @@ async def run_pr_create(pr_input: PRCreateInput) -> PRCreateResponse:
             success=False,
             message="GITHUB_TOKEN environment variable not set"
         )
+
+    # Prepare the branch FIRST so patches/commit land on it
+    try:
+        prepare_head_branch(
+            head_branch=pr_input.pr_spec.head_branch,
+            base_branch=pr_input.pr_spec.base_branch,
+        )
+    except subprocess.CalledProcessError as e:
+        return PRCreateResponse(success=False, message=f"Failed to prepare branch: {e}")
 
     # Get current working directory as base for file operations
     base_dir = os.getcwd()

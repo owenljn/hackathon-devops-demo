@@ -57,7 +57,8 @@
       "event_store.json",
       "samples/iac/insecure/main.tf"
     ],
-    "status": "processing",
-    "stored_at": "now"
+    "status": "pr_failed",
+    "stored_at": "now",
+    "error": "Failed to create PR - check GitHub CLI authentication and repository access"
   }
 }
