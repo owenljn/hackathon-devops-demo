@@ -35,6 +35,10 @@ sequenceDiagram
 - GitHub Personal Access Token (scopes: `repo`, `pull_request`)
 - Slack Incoming Webhook URL
 
+### Tools recommended
+ngrok [this tool allows you to expose your locally running instance to the internet](https://ngrok.com/)
+uv [Python package management tool, extremely fast](https://docs.astral.sh/uv/)
+
 ### Installation
 
 ```bash

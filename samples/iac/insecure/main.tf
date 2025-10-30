@@ -55,3 +55,5 @@ resource "aws_instance" "demo" {
   # ISSUE 5: Missing common tags like Environment
   # Will be auto-tagged
 }
+
+# tmp

@@ -60,5 +60,17 @@
     "status": "pr_failed",
     "stored_at": "now",
     "error": "Failed to create PR - check GitHub CLI authentication and repository access"
+  },
+  "owenljn/hackathon-devops-demo#85e42af94280d83cd4210dffb0f3963a4c4e2be5": {
+    "type": "push",
+    "repo": "owenljn/hackathon-devops-demo",
+    "branch": "test-demo",
+    "commit_sha": "85e42af94280d83cd4210dffb0f3963a4c4e2be5",
+    "changed_paths": [
+      "samples/iac/insecure/main.tf"
+    ],
+    "status": "pr_failed",
+    "stored_at": "now",
+    "error": "Failed to create PR - check GitHub CLI authentication and repository access"
   }
 }
