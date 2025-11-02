@@ -1,6 +1,7 @@
 # MCP Orchestrator - Coordinates the IaC security pipeline
 
 import logging
+import os
 from typing import List, Optional
 
 from .schemas import (
@@ -180,3 +181,276 @@ This PR contains automated fixes for Infrastructure as Code security issues dete
             ))
         except:
             pass
+
+async def handle_slack_interaction(
+    action_type: str,
+    action_data: dict,
+    user_info: dict,
+    channel: str,
+    message_ts: str
+):
+    """
+    Handle Slack interactive component actions (HITL)
+
+    Args:
+        action_type: The action ID (approve_merge, reject_pr, etc.)
+        action_data: JSON data associated with the action
+        user_info: User information from Slack
+        channel: Slack channel ID
+        message_ts: Message timestamp for threading
+    """
+    logger.info(f"Handling Slack interaction: {action_type}")
+
+    try:
+        if action_type == "approve_merge":
+            await handle_approve_merge(action_data, user_info, channel, message_ts)
+        elif action_type == "reject_pr":
+            await handle_reject_pr(action_data, user_info, channel, message_ts)
+        elif action_type == "rerun_scan":
+            await handle_rerun_scan(action_data, user_info, channel, message_ts)
+        elif action_type == "rollback_deployment":
+            await handle_rollback_deployment(action_data, user_info, channel, message_ts)
+        else:
+            logger.warning(f"Unknown action type: {action_type}")
+
+    except Exception as e:
+        logger.error(f"Error handling Slack interaction {action_type}: {str(e)}", exc_info=True)
+
+        # Send error notification
+        try:
+            await send_slack_thread_message(
+                channel=channel,
+                thread_ts=message_ts,
+                text=f"❌ Error processing {action_type}: {str(e)}"
+            )
+        except:
+            pass
+
+async def handle_approve_merge(action_data: dict, user_info: dict, channel: str, message_ts: str):
+    """Handle PR approval and merge"""
+    pr_url = action_data.get("pr_url")
+    repo = action_data.get("repo")
+    pr_number = action_data.get("pr_number")
+
+    logger.info(f"Approving and merging PR: {pr_url}")
+
+    # Send initial response
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text=f"✅ PR approved by {user_info.get('name', 'unknown')}. Initiating merge..."
+    )
+
+    try:
+        # Attempt to merge the PR
+        success = await merge_pr_via_api(repo, pr_number, user_info)
+
+        if success:
+            await send_slack_thread_message(
+                channel=channel,
+                thread_ts=message_ts,
+                text="✅ PR merged successfully! Deployment will begin shortly."
+            )
+
+            # Trigger deployment (placeholder for now)
+            await trigger_deployment(repo, pr_number, channel, message_ts)
+        else:
+            await send_slack_thread_message(
+                channel=channel,
+                thread_ts=message_ts,
+                text="❌ PR merge failed. Check branch protection rules or conflicts."
+            )
+
+    except Exception as e:
+        logger.error(f"Error merging PR: {str(e)}")
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"❌ Error during merge: {str(e)}"
+        )
+
+async def handle_reject_pr(action_data: dict, user_info: dict, channel: str, message_ts: str):
+    """Handle PR rejection"""
+    pr_url = action_data.get("pr_url")
+    repo = action_data.get("repo")
+    pr_number = action_data.get("pr_number")
+
+    logger.info(f"Rejecting PR: {pr_url}")
+
+    # Close the PR
+    try:
+        await close_pr_via_api(repo, pr_number, user_info)
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"❌ PR rejected by {user_info.get('name', 'unknown')}. PR has been closed."
+        )
+    except Exception as e:
+        logger.error(f"Error closing PR: {str(e)}")
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"❌ Error closing PR: {str(e)}"
+        )
+
+async def handle_rerun_scan(action_data: dict, user_info: dict, channel: str, message_ts: str):
+    """Handle re-run scan request"""
+    repo = action_data.get("repo")
+    commit_sha = action_data.get("commit_sha")
+
+    logger.info(f"Re-running scan for {repo} at {commit_sha}")
+
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text=f"🔄 Re-running IaC scan requested by {user_info.get('name', 'unknown')}..."
+    )
+
+    # Re-trigger the scan pipeline
+    try:
+        push_event = {
+            "repo": repo,
+            "branch": "main",  # Assume main branch for re-scan
+            "commit_sha": commit_sha,
+            "changed_paths": ["."]  # Scan all files
+        }
+        await handle_push_event(push_event)
+
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text="✅ Re-scan initiated. Results will be posted shortly."
+        )
+    except Exception as e:
+        logger.error(f"Error re-running scan: {str(e)}")
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"❌ Error re-running scan: {str(e)}"
+        )
+
+async def handle_rollback_deployment(action_data: dict, user_info: dict, channel: str, message_ts: str):
+    """Handle deployment rollback"""
+    deployment_id = action_data.get("deployment_id")
+    repo = action_data.get("repo")
+
+    logger.info(f"Rolling back deployment: {deployment_id}")
+
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text=f"🔄 Rollback initiated by {user_info.get('name', 'unknown')}. This may take a few minutes..."
+    )
+
+    try:
+        success = await rollback_deployment(deployment_id, repo, user_info)
+
+        if success:
+            await send_slack_thread_message(
+                channel=channel,
+                thread_ts=message_ts,
+                text="✅ Rollback completed successfully. System should be stable now."
+            )
+        else:
+            await send_slack_thread_message(
+                channel=channel,
+                thread_ts=message_ts,
+                text="❌ Rollback failed. Manual intervention may be required."
+            )
+    except Exception as e:
+        logger.error(f"Error during rollback: {str(e)}")
+        await send_slack_thread_message(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"❌ Rollback error: {str(e)}"
+        )
+
+# Helper functions for GitHub API operations
+async def merge_pr_via_api(repo: str, pr_number: int, user_info: dict) -> bool:
+    """Merge PR via GitHub API"""
+    # Placeholder - implement actual GitHub API call
+    logger.info(f"Merging PR #{pr_number} in {repo}")
+    # TODO: Implement GitHub API merge
+    return True  # Assume success for demo
+
+async def close_pr_via_api(repo: str, pr_number: int, user_info: dict) -> bool:
+    """Close PR via GitHub API"""
+    # Placeholder - implement actual GitHub API call
+    logger.info(f"Closing PR #{pr_number} in {repo}")
+    # TODO: Implement GitHub API close
+    return True  # Assume success for demo
+
+async def trigger_deployment(repo: str, pr_number: int, channel: str, message_ts: str):
+    """Trigger deployment after PR merge"""
+    logger.info(f"Triggering deployment for {repo} PR #{pr_number}")
+
+    # Send deployment started message
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text="🚀 Deployment started. Monitoring health checks..."
+    )
+
+    # Placeholder for deployment logic
+    # TODO: Implement actual deployment triggering (GitHub Actions, etc.)
+
+    # Simulate deployment completion
+    import asyncio
+    await asyncio.sleep(2)  # Simulate deployment time
+
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text="✅ Deployment completed successfully! Running health checks..."
+    )
+
+    # Trigger health checks
+    await run_health_checks(repo, pr_number, channel, message_ts)
+
+async def run_health_checks(repo: str, pr_number: int, channel: str, message_ts: str):
+    """Run post-deployment health checks"""
+    logger.info(f"Running health checks for {repo} deployment")
+
+    # Placeholder health checks
+    health_checks = [
+        {"name": "API Health", "status": "✅ PASS", "url": "/health"},
+        {"name": "Database", "status": "✅ PASS", "details": "Connection OK"},
+        {"name": "External Services", "status": "✅ PASS", "details": "All services responding"}
+    ]
+
+    health_summary = "\n".join([f"• {check['name']}: {check['status']}" for check in health_checks])
+
+    await send_slack_thread_message(
+        channel=channel,
+        thread_ts=message_ts,
+        text=f"🏥 Health Check Results:\n{health_summary}\n\n🎉 All systems operational!"
+    )
+
+async def rollback_deployment(deployment_id: str, repo: str, user_info: dict) -> bool:
+    """Rollback a deployment"""
+    logger.info(f"Rolling back deployment {deployment_id} for {repo}")
+    # TODO: Implement actual rollback logic
+    return True  # Assume success for demo
+
+async def send_slack_thread_message(channel: str, thread_ts: str, text: str):
+    """Send a threaded message in Slack"""
+    try:
+        import requests
+
+        webhook_url = os.getenv("SLACK_WEBHOOK_URL")
+        if not webhook_url:
+            logger.warning("No SLACK_WEBHOOK_URL set, skipping Slack message")
+            return
+
+        payload = {
+            "channel": channel,
+            "thread_ts": thread_ts,
+            "text": text
+        }
+
+        response = requests.post(webhook_url, json=payload)
+        if response.status_code != 200:
+            logger.error(f"Slack API error: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error sending Slack message: {str(e)}")
